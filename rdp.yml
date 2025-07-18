@@ -1,38 +1,87 @@
-name: Playit RDP Tunnel
- 
+name: Playit RDP with MediaFire Backup
+
 on:
   workflow_dispatch:
- 
+
 jobs:
   setup-rdp-tunnel:
     runs-on: windows-latest
- 
+    timeout-minutes: 355  # 5 minutes less than 6h limit
+
     steps:
-    - name: Check out the repository
-      uses: actions/checkout@v2
- 
+    # Setup tools - Fixed installation method
+    - name: Install required software
+      run: |
+        # Install 7-Zip silently
+        $url = "https://www.7-zip.org/a/7z2201-x64.exe"
+        $installer = "$env:TEMP\7z-installer.exe"
+        Invoke-WebRequest -Uri $url -OutFile $installer
+        Start-Process -FilePath $installer -ArgumentList "/S" -Wait
+        Remove-Item $installer -Force
+
+        # Install ffsend (MediaFire CLI)
+        $ffsendUrl = "https://github.com/timvisee/ffsend/releases/download/v0.2.76/ffsend-v0.2.76-windows-x64.exe"
+        Invoke-WebRequest -Uri $ffsendUrl -OutFile "$env:USERPROFILE\ffsend.exe"
+
+        # Add to PATH
+        $env:Path += ";C:\Program Files\7-Zip;$env:USERPROFILE"
+        [Environment]::SetEnvironmentVariable("Path", $env:Path, [EnvironmentVariableTarget]::Machine)
+
+    # Restore previous backup
+    - name: Download last session backup
+      env:
+        MEDIAFIRE_EMAIL: ${{ secrets.MEDIAFIRE_EMAIL }}
+        MEDIAFIRE_PASSWORD: ${{ secrets.MEDIAFIRE_PASSWORD }}
+        BACKUP_PASSWORD: ${{ secrets.BACKUP_PASSWORD }}
+      run: |
+        & "$env:USERPROFILE\ffsend.exe" download "https://www.mediafire.com/file/your_backup_id/backup.7z" -p "$env:MEDIAFIRE_PASSWORD" -o "$env:USERPROFILE\restored.7z"
+        if (Test-Path "$env:USERPROFILE\restored.7z") {
+          7z x "$env:USERPROFILE\restored.7z" -o"$env:USERPROFILE\" -y -p"$env:BACKUP_PASSWORD"
+          Remove-Item "$env:USERPROFILE\restored.7z" -Force
+        }
+
+    # Original Playit setup
     - name: Download and Install Playit
       run: |
         Invoke-WebRequest -Uri "https://github.com/playit-cloud/playit-agent/releases/download/v0.15.26/playit-windows-x86_64-signed.exe" -OutFile "$env:USERPROFILE\playit.exe"
-        Start-Sleep -Seconds 5  # Give some time for the download to complete
- 
- 
-    # Default, optional.
+        Start-Sleep -Seconds 5
+
     - name: Enable TS
-      run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server'-name "fDenyTSConnections" -Value 0
-    - run: Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-    - run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
-    - run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "p@ssw0rd!" -Force)
- 
+      run: |
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+        Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "$env:RDP_PASS" -Force)
+
     - name: Start Playit and Set Up RDP Tunnel
       env:
-        PLAYIT_AUTH_KEY: ${{ secrets.PL }} 
+        PLAYIT_AUTH_KEY: ${{ secrets.PL }}
       run: |
-        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret $env:PLAYIT_AUTH_KEY" -NoNewWindow -Wait
-        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -NoNewWindow
- 
- 
-    # Prevent workflow to stop
-    - name: Keep the GitHub Action Runner Alive
+        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret $env:PLAYIT_AUTH_KEY" -NoNewWindow
+        Start-Sleep -Seconds 10  # Wait for tunnel to establish
+
+    # Auto-backup every 30 minutes
+    - name: Continuous backup
+      env:
+        MEDIAFIRE_EMAIL: ${{ secrets.MEDIAFIRE_EMAIL }}
+        MEDIAFIRE_PASSWORD: ${{ secrets.MEDIAFIRE_PASSWORD }}
+        BACKUP_PASSWORD: ${{ secrets.BACKUP_PASSWORD }}
       run: |
-          Start-Sleep -Seconds 11800  # Adjust the duration based on your needs
+        $backupCount = 0
+        while ($true) {
+          $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+          7z a -t7z -mx5 -p"$env:BACKUP_PASSWORD" "$env:USERPROFILE\backup-$timestamp.7z" "$env:USERPROFILE\*" -xr!"$env:USERPROFILE\playit.exe" -xr!"$env:USERPROFILE\ffsend.exe"
+          & "$env:USERPROFILE\ffsend.exe" upload -y -p "$env:MEDIAFIRE_PASSWORD" "$env:USERPROFILE\backup-$timestamp.7z"
+          Remove-Item "$env:USERPROFILE\backup-$timestamp.7z" -Force
+          $backupCount++
+          if ($backupCount -ge 10) { break }  # Prevent infinite loops
+          Start-Sleep -Seconds 1800  # 30 minutes
+        }
+
+    # Final backup before shutdown
+    - name: Final backup
+      if: always()
+      run: |
+        $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+        7z a -t7z -mx9 -p"$env:BACKUP_PASSWORD" "$env:USERPROFILE\final-backup.7z" "$env:USERPROFILE\*" -xr!"$env:USERPROFILE\playit.exe" -xr!"$env:USERPROFILE\ffsend.exe"
+        & "$env:USERPROFILE\ffsend.exe" upload -y -p "$env:MEDIAFIRE_PASSWORD" "$env:USERPROFILE\final-backup.7z"
