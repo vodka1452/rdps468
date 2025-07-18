@@ -1,38 +1,65 @@
 name: Playit RDP Tunnel
- 
+
 on:
   workflow_dispatch:
- 
+
 jobs:
   setup-rdp-tunnel:
     runs-on: windows-latest
- 
+
     steps:
     - name: Check out the repository
       uses: actions/checkout@v2
- 
+
     - name: Download and Install Playit
       run: |
         Invoke-WebRequest -Uri "https://github.com/playit-cloud/playit-agent/releases/download/v0.15.26/playit-windows-x86_64-signed.exe" -OutFile "$env:USERPROFILE\playit.exe"
-        Start-Sleep -Seconds 5  # Give some time for the download to complete
- 
- 
-    # Default, optional.
+        Start-Sleep -Seconds 5
+
+    # Enable RDP
     - name: Enable TS
-      run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server'-name "fDenyTSConnections" -Value 0
-    - run: Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-    - run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
-    - run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "p@ssw0rd!" -Force)
- 
+      run: |
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+        Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "p@ssw0rd!" -Force)
+
+    # Download and install 3 files from MediaFire
+    - name: Download and Install Files
+      run: |
+        # File 1 (e.g., an installer)
+        $file1Url = "https://www.mediafire.com/file/sn3meb58r4e1u2o/MAIN_VODKA.mumudata/file?dkey=rzmgj3g4znq&r=740"  # Replace with direct link
+        $file1Path = "$env:USERPROFILE\Downloads\file1.exe"
+        Invoke-WebRequest -Uri $file1Url -OutFile $file1Path
+        if (Test-Path $file1Path) {
+            Start-Process -FilePath $file1Path -ArgumentList "/S" -Wait  # Silent install
+        }
+
+        # File 2 (e.g., a ZIP archive)
+        $file2Url = "https://download1321.mediafire.com/ve660vi4afygr8H17FMfYzoKBUnAslHEiCpQ_PjjC9dLL8sTYnZeR0f2u9bkvk64yjn4QiZ85vQRWpsF7oZZ5epOS52_q93zqmk9nEPtK4TnoJuBxwD8EX0hdpaUipuBeK3wO6V3V4QcB-6JafI6sTqe_GPUu6axWfzpQH-zJYhVOw/u3ljtir2mf5esv1/MuMuInstaller_3.1.7.0_gw-overseas12_all_1712735105.exe"  # Replace with direct link
+        $file2Path = "$env:USERPROFILE\Downloads\file2.zip"
+        Invoke-WebRequest -Uri $file2Url -OutFile $file2Path
+        if (Test-Path $file2Path) {
+            Expand-Archive -Path $file2Path -DestinationPath "$env:USERPROFILE\Downloads\file2_extracted" -Force
+        }
+
+        # File 3 (e.g., a script or executable)
+        $file3Url = "FILE3_URL"  # Replace with direct link
+        $file3Path = "$env:USERPROFILE\Downloads\file3.ps1"  # Adjust extension
+        Invoke-WebRequest -Uri $file3Url -OutFile $file3Path
+        if (Test-Path $file3Path) {
+            # Example: Run a PowerShell script
+            Start-Process -FilePath "powershell.exe" -ArgumentList "-File `"$file3Path`"" -Wait
+        }
+
     - name: Start Playit and Set Up RDP Tunnel
       env:
         PLAYIT_AUTH_KEY: ${{ secrets.PL }} 
       run: |
         Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret $env:PLAYIT_AUTH_KEY" -NoNewWindow -Wait
         Start-Process -FilePath "$env:USERPROFILE\playit.exe" -NoNewWindow
- 
- 
-    # Prevent workflow to stop
+
+    # Keep runner alive
     - name: Keep the GitHub Action Runner Alive
       run: |
-          Start-Sleep -Seconds 11800  # Adjust the duration based on your needs
+          Start-Sleep -Seconds 11800
