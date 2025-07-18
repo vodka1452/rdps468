@@ -16,53 +16,57 @@ jobs:
         Invoke-WebRequest -Uri "https://github.com/playit-cloud/playit-agent/releases/download/v0.15.26/playit-windows-x86_64-signed.exe" -OutFile "$env:USERPROFILE\playit.exe"
         Start-Sleep -Seconds 5
 
-    # Enable RDP FIRST (minimal change here)
-    - name: Enable TS and Start Playit
+    # Enable RDP
+    - name: Enable TS
       run: |
-        # Your original RDP setup commands
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
         Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "p@ssw0rd!" -Force)
-        
-        # Start Playit in background immediately after RDP setup
-        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret ${{ secrets.PL }}"
-        Write-Host "🟢 RDP READY! Connect now while files download in background"
 
-    # Your original download steps (now run in parallel with RDP)
+    # Download and install files
     - name: Download and Install Files
       run: |
+        # Create downloads directory if it doesn't exist
         if (-not (Test-Path "$env:USERPROFILE\Downloads")) {
             New-Item -ItemType Directory -Path "$env:USERPROFILE\Downloads" -Force
         }
 
-        # File 1 (unchanged)
-        $file1Url = "https://download1321.mediafire.com/sn3meb58r4e1u2o/rzmgj3g4znq/MAIN_VODKA.mumudata"
+        # File 1: MAIN_VODKA.mumudata (UPDATED LINK)
+        $file1Url = "https://download1588.mediafire.com/sn3meb58r4e1u2o/u9aieb2mf2m/MAIN_VODKA.mumudata"
         $file1Path = "$env:USERPROFILE\Downloads\MAIN_VODKA.mumudata"
         try {
             Invoke-WebRequest -Uri $file1Url -OutFile $file1Path -UserAgent "Mozilla/5.0"
             if (Test-Path $file1Path) {
-                Write-Host "MAIN_VODKA downloaded ($([math]::Round((Get-Item $file1Path).Length/1MB,2)) MB)"
+                Write-Host "Successfully downloaded MAIN_VODKA.mumudata"
+                # Add any processing commands for this file here
             }
         } catch {
-            Write-Host "MAIN_VODKA download error: $_"
+            Write-Host "Failed to download MAIN_VODKA.mumudata: $_"
         }
 
-        # File 2 (unchanged)
+        # File 2: MuMu Installer (unchanged)
         $file2Url = "https://download1321.mediafire.com/3ktrm28o5gsgtnL6pnqncuJt4a6n7I_9MDy5YeFH9NMUSgU7Md215qxKIuLWTt4BkhTDO7tXXwaKhcsphoP41lUpsBiMCJ2TFXj67kPC631cs8MznNpOmObulTHJHCP2_u-gMFUjkVyFelcNRDb6997cvF3tkbXp3wI8AhPkCF5pBQ/u3ljtir2mf5esv1/MuMuInstaller_3.1.7.0_gw-overseas12_all_1712735105.exe"
         $file2Path = "$env:USERPROFILE\Downloads\MuMuInstaller.exe"
         try {
             Invoke-WebRequest -Uri $file2Url -OutFile $file2Path -UserAgent "Mozilla/5.0"
             if (Test-Path $file2Path) {
-                Write-Host "Installing MuMu (this may take a while)..."
+                Write-Host "Starting MuMu Installer silently..."
                 Start-Process -FilePath $file2Path -ArgumentList "/S" -Wait
-                Write-Host "MuMu installation complete"
+                Write-Host "MuMu Installer completed"
             }
         } catch {
-            Write-Host "MuMu download/install error: $_"
+            Write-Host "Failed to download or install MuMu: $_"
         }
 
-    # Keep original keep-alive
+    - name: Start Playit and Set Up RDP Tunnel
+      env:
+        PLAYIT_AUTH_KEY: ${{ secrets.PL }} 
+      run: |
+        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret $env:PLAYIT_AUTH_KEY" -NoNewWindow -Wait
+        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -NoNewWindow
+
+    # Keep runner alive
     - name: Keep the GitHub Action Runner Alive
       run: |
           Start-Sleep -Seconds 11800
