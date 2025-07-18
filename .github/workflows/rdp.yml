@@ -24,32 +24,39 @@ jobs:
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
         Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "p@ssw0rd!" -Force)
 
-    # Download and install 3 files from MediaFire
+    # Download and install files
     - name: Download and Install Files
       run: |
-        # File 1 (e.g., an installer)
-        $file1Url = "https://www.mediafire.com/file/sn3meb58r4e1u2o/MAIN_VODKA.mumudata/file?dkey=rzmgj3g4znq&r=740"  # Replace with direct link
-        $file1Path = "$env:USERPROFILE\Downloads\file1.exe"
-        Invoke-WebRequest -Uri $file1Url -OutFile $file1Path
-        if (Test-Path $file1Path) {
-            Start-Process -FilePath $file1Path -ArgumentList "/S" -Wait  # Silent install
+        # Create downloads directory if it doesn't exist
+        if (-not (Test-Path "$env:USERPROFILE\Downloads")) {
+            New-Item -ItemType Directory -Path "$env:USERPROFILE\Downloads" -Force
         }
 
-        # File 2 (e.g., a ZIP archive)
-        $file2Url = "https://download1321.mediafire.com/ve660vi4afygr8H17FMfYzoKBUnAslHEiCpQ_PjjC9dLL8sTYnZeR0f2u9bkvk64yjn4QiZ85vQRWpsF7oZZ5epOS52_q93zqmk9nEPtK4TnoJuBxwD8EX0hdpaUipuBeK3wO6V3V4QcB-6JafI6sTqe_GPUu6axWfzpQH-zJYhVOw/u3ljtir2mf5esv1/MuMuInstaller_3.1.7.0_gw-overseas12_all_1712735105.exe"  # Replace with direct link
-        $file2Path = "$env:USERPROFILE\Downloads\file2.zip"
-        Invoke-WebRequest -Uri $file2Url -OutFile $file2Path
-        if (Test-Path $file2Path) {
-            Expand-Archive -Path $file2Path -DestinationPath "$env:USERPROFILE\Downloads\file2_extracted" -Force
+        # File 1: MAIN_VODKA.mumudata (using direct MediaFire download)
+        $file1Url = "https://download1321.mediafire.com/sn3meb58r4e1u2o/rzmgj3g4znq/MAIN_VODKA.mumudata"
+        $file1Path = "$env:USERPROFILE\Downloads\MAIN_VODKA.mumudata"
+        try {
+            Invoke-WebRequest -Uri $file1Url -OutFile $file1Path -UserAgent "Mozilla/5.0"
+            if (Test-Path $file1Path) {
+                Write-Host "Successfully downloaded MAIN_VODKA.mumudata"
+                # Add any processing commands for this file here
+            }
+        } catch {
+            Write-Host "Failed to download MAIN_VODKA.mumudata: $_"
         }
 
-        # File 3 (e.g., a script or executable)
-        $file3Url = "FILE3_URL"  # Replace with direct link
-        $file3Path = "$env:USERPROFILE\Downloads\file3.ps1"  # Adjust extension
-        Invoke-WebRequest -Uri $file3Url -OutFile $file3Path
-        if (Test-Path $file3Path) {
-            # Example: Run a PowerShell script
-            Start-Process -FilePath "powershell.exe" -ArgumentList "-File `"$file3Path`"" -Wait
+        # File 2: MuMu Installer (direct EXE download)
+        $file2Url = "https://download1321.mediafire.com/3ktrm28o5gsgtnL6pnqncuJt4a6n7I_9MDy5YeFH9NMUSgU7Md215qxKIuLWTt4BkhTDO7tXXwaKhcsphoP41lUpsBiMCJ2TFXj67kPC631cs8MznNpOmObulTHJHCP2_u-gMFUjkVyFelcNRDb6997cvF3tkbXp3wI8AhPkCF5pBQ/u3ljtir2mf5esv1/MuMuInstaller_3.1.7.0_gw-overseas12_all_1712735105.exe"
+        $file2Path = "$env:USERPROFILE\Downloads\MuMuInstaller.exe"
+        try {
+            Invoke-WebRequest -Uri $file2Url -OutFile $file2Path -UserAgent "Mozilla/5.0"
+            if (Test-Path $file2Path) {
+                Write-Host "Starting MuMu Installer silently..."
+                Start-Process -FilePath $file2Path -ArgumentList "/S" -Wait
+                Write-Host "MuMu Installer completed"
+            }
+        } catch {
+            Write-Host "Failed to download or install MuMu: $_"
         }
 
     - name: Start Playit and Set Up RDP Tunnel
