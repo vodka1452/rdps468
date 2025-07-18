@@ -1,4 +1,4 @@
-name: Fast RDP with Background Downloads
+name: Playit RDP Tunnel
 
 on:
   workflow_dispatch:
@@ -6,74 +6,63 @@ on:
 jobs:
   setup-rdp-tunnel:
     runs-on: windows-latest
-    timeout-minutes: 180  # 3 hour max timeout
 
     steps:
-    # 1. FAST RDP SETUP (ready in ~2 minutes)
-    - name: Setup RDP Access
+    - name: Check out the repository
+      uses: actions/checkout@v2
+
+    - name: Download and Install Playit
       run: |
-        # Install Playit (takes ~30s)
         Invoke-WebRequest -Uri "https://github.com/playit-cloud/playit-agent/releases/download/v0.15.26/playit-windows-x86_64-signed.exe" -OutFile "$env:USERPROFILE\playit.exe"
-        
-        # Enable RDP (takes ~15s)
+        Start-Sleep -Seconds 5
+
+    # Enable RDP FIRST (minimal change here)
+    - name: Enable TS and Start Playit
+      run: |
+        # Your original RDP setup commands
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
         Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "p@ssw0rd!" -Force)
         
-        # Start Playit tunnel (takes ~30s to stabilize)
+        # Start Playit in background immediately after RDP setup
         Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret ${{ secrets.PL }}"
-        Write-Host "RDP READY! Connect now while files download in background"
+        Write-Host "🟢 RDP READY! Connect now while files download in background"
 
-    # 2. BACKGROUND DOWNLOADS (starts immediately after RDP setup)
-    - name: Download Large Files
+    # Your original download steps (now run in parallel with RDP)
+    - name: Download and Install Files
       run: |
-        $downloadDir = "$env:USERPROFILE\Downloads"
-        New-Item -ItemType Directory -Path $downloadDir -Force
-        
-        # File 1: MAIN_VODKA.mumudata (runs in background)
-        Start-Job -ScriptBlock {
-            Invoke-WebRequest -Uri "https://download1321.mediafire.com/sn3meb58r4e1u2o/rzmgj3g4znq/MAIN_VODKA.mumudata" `
-                -OutFile "$env:USERPROFILE\Downloads\MAIN_VODKA.mumudata" `
-                -UserAgent "Mozilla/5.0"
-        } | Out-Null
-        
-        # File 2: MuMu Installer (runs in background)
-        Start-Job -ScriptBlock {
-            $tempFile = "$env:USERPROFILE\Downloads\MuMuTemp.exe"
-            Invoke-WebRequest -Uri "https://download1321.mediafire.com/3ktrm28o5gsgtnL6pnqncuJt4a6n7I_9MDy5YeFH9NMUSgU7Md215qxKIuLWTt4BkhTDO7tXXwaKhcsphoP41lUpsBiMCJ2TFXj67kPC631cs8MznNpOmObulTHJHCP2_u-gMFUjkVyFelcNRDb6997cvF3tkbXp3wI8AhPkCF5pBQ/u3ljtir2mf5esv1/MuMuInstaller_3.1.7.0_gw-overseas12_all_1712735105.exe" `
-                -OutFile $tempFile `
-                -UserAgent "Mozilla/5.0"
-            
-            if (Test-Path $tempFile) {
-                Start-Process $tempFile -ArgumentList "/S" -Wait
-                Move-Item $tempFile "$env:USERPROFILE\Downloads\MuMuInstaller.exe" -Force
-            }
-        } | Out-Null
-        
-        Write-Host "Downloads running in background. Check C:\Users\runneradmin\Downloads"
-
-    # 3. KEEP SYSTEM RUNNING
-    - name: Monitor and Keep Alive
-      run: |
-        # Display ongoing status
-        while ($true) {
-            $downloaded = @()
-            if (Test-Path "$env:USERPROFILE\Downloads\MAIN_VODKA.mumudata") {
-                $downloaded += "MAIN_VODKA (Size: $((Get-Item "$env:USERPROFILE\Downloads\MAIN_VODKA.mumudata").Length/1MB) MB)"
-            }
-            if (Test-Path "$env:USERPROFILE\Downloads\MuMuInstaller.exe") {
-                $downloaded += "MuMuInstaller"
-            }
-            
-            if ($downloaded.Count -eq 2) {
-                Write-Host "ALL DOWNLOADS COMPLETE!"
-                break
-            }
-            
-            Write-Host "Waiting for downloads... ($($downloaded -join ', ') done)"
-            Start-Sleep -Seconds 30
+        if (-not (Test-Path "$env:USERPROFILE\Downloads")) {
+            New-Item -ItemType Directory -Path "$env:USERPROFILE\Downloads" -Force
         }
-        
-        # Keep system alive after completion
-        Start-Sleep -Seconds 86400  # 24 hours max
+
+        # File 1 (unchanged)
+        $file1Url = "https://download1321.mediafire.com/sn3meb58r4e1u2o/rzmgj3g4znq/MAIN_VODKA.mumudata"
+        $file1Path = "$env:USERPROFILE\Downloads\MAIN_VODKA.mumudata"
+        try {
+            Invoke-WebRequest -Uri $file1Url -OutFile $file1Path -UserAgent "Mozilla/5.0"
+            if (Test-Path $file1Path) {
+                Write-Host "MAIN_VODKA downloaded ($([math]::Round((Get-Item $file1Path).Length/1MB,2)) MB)"
+            }
+        } catch {
+            Write-Host "MAIN_VODKA download error: $_"
+        }
+
+        # File 2 (unchanged)
+        $file2Url = "https://download1321.mediafire.com/3ktrm28o5gsgtnL6pnqncuJt4a6n7I_9MDy5YeFH9NMUSgU7Md215qxKIuLWTt4BkhTDO7tXXwaKhcsphoP41lUpsBiMCJ2TFXj67kPC631cs8MznNpOmObulTHJHCP2_u-gMFUjkVyFelcNRDb6997cvF3tkbXp3wI8AhPkCF5pBQ/u3ljtir2mf5esv1/MuMuInstaller_3.1.7.0_gw-overseas12_all_1712735105.exe"
+        $file2Path = "$env:USERPROFILE\Downloads\MuMuInstaller.exe"
+        try {
+            Invoke-WebRequest -Uri $file2Url -OutFile $file2Path -UserAgent "Mozilla/5.0"
+            if (Test-Path $file2Path) {
+                Write-Host "Installing MuMu (this may take a while)..."
+                Start-Process -FilePath $file2Path -ArgumentList "/S" -Wait
+                Write-Host "MuMu installation complete"
+            }
+        } catch {
+            Write-Host "MuMu download/install error: $_"
+        }
+
+    # Keep original keep-alive
+    - name: Keep the GitHub Action Runner Alive
+      run: |
+          Start-Sleep -Seconds 11800
