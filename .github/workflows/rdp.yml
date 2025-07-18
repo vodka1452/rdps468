@@ -6,67 +6,53 @@ on:
 jobs:
   setup-rdp-tunnel:
     runs-on: windows-latest
+    timeout-minutes: 60  # Increased timeout for large downloads
 
     steps:
-    - name: Check out the repository
+    - name: Check out repository
       uses: actions/checkout@v2
 
-    - name: Download and Install Playit
-      run: |
-        Invoke-WebRequest -Uri "https://github.com/playit-cloud/playit-agent/releases/download/v0.15.26/playit-windows-x86_64-signed.exe" -OutFile "$env:USERPROFILE\playit.exe"
-        Start-Sleep -Seconds 5
-
-    # Enable RDP
-    - name: Enable TS
+    # Setup RDP first (so you can connect while files download)
+    - name: Enable RDP
       run: |
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
         Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "p@ssw0rd!" -Force)
 
-    # Download and install files
-    - name: Download and Install Files
-      run: |
-        # Create downloads directory if it doesn't exist
-        if (-not (Test-Path "$env:USERPROFILE\Downloads")) {
-            New-Item -ItemType Directory -Path "$env:USERPROFILE\Downloads" -Force
-        }
-
-        # File 1: MAIN_VODKA.mumudata (using direct MediaFire download)
-        $file1Url = "https://download1321.mediafire.com/sn3meb58r4e1u2o/rzmgj3g4znq/MAIN_VODKA.mumudata"
-        $file1Path = "$env:USERPROFILE\Downloads\MAIN_VODKA.mumudata"
-        try {
-            Invoke-WebRequest -Uri $file1Url -OutFile $file1Path -UserAgent "Mozilla/5.0"
-            if (Test-Path $file1Path) {
-                Write-Host "Successfully downloaded MAIN_VODKA.mumudata"
-                # Add any processing commands for this file here
-            }
-        } catch {
-            Write-Host "Failed to download MAIN_VODKA.mumudata: $_"
-        }
-
-        # File 2: MuMu Installer (direct EXE download)
-        $file2Url = "https://download1321.mediafire.com/3ktrm28o5gsgtnL6pnqncuJt4a6n7I_9MDy5YeFH9NMUSgU7Md215qxKIuLWTt4BkhTDO7tXXwaKhcsphoP41lUpsBiMCJ2TFXj67kPC631cs8MznNpOmObulTHJHCP2_u-gMFUjkVyFelcNRDb6997cvF3tkbXp3wI8AhPkCF5pBQ/u3ljtir2mf5esv1/MuMuInstaller_3.1.7.0_gw-overseas12_all_1712735105.exe"
-        $file2Path = "$env:USERPROFILE\Downloads\MuMuInstaller.exe"
-        try {
-            Invoke-WebRequest -Uri $file2Url -OutFile $file2Path -UserAgent "Mozilla/5.0"
-            if (Test-Path $file2Path) {
-                Write-Host "Starting MuMu Installer silently..."
-                Start-Process -FilePath $file2Path -ArgumentList "/S" -Wait
-                Write-Host "MuMu Installer completed"
-            }
-        } catch {
-            Write-Host "Failed to download or install MuMu: $_"
-        }
-
-    - name: Start Playit and Set Up RDP Tunnel
+    # Start Playit tunnel (in background)
+    - name: Start Playit Tunnel
       env:
-        PLAYIT_AUTH_KEY: ${{ secrets.PL }} 
+        PLAYIT_AUTH_KEY: ${{ secrets.PL }}
       run: |
-        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret $env:PLAYIT_AUTH_KEY" -NoNewWindow -Wait
-        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -NoNewWindow
+        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret $env:PLAYIT_AUTH_KEY"
+        Start-Sleep -Seconds 15  # Wait for tunnel to establish
 
-    # Keep runner alive
-    - name: Keep the GitHub Action Runner Alive
+    # Download large files using GitHub's internet (not your local machine)
+    - name: Download Large Files
       run: |
-          Start-Sleep -Seconds 11800
+        $downloadDir = "$env:USERPROFILE\Downloads"
+        New-Item -ItemType Directory -Path $downloadDir -Force -ErrorAction SilentlyContinue
+
+        # File 1: MAIN_VODKA.mumudata
+        $file1 = "$downloadDir\MAIN_VODKA.mumudata"
+        if (-not (Test-Path $file1)) {
+            Write-Host "Downloading MAIN_VODKA.mumudata (this may take several minutes)..."
+            Invoke-WebRequest -Uri "https://download1321.mediafire.com/sn3meb58r4e1u2o/rzmgj3g4znq/MAIN_VODKA.mumudata" -OutFile $file1 -UserAgent "Mozilla/5.0"
+        }
+
+        # File 2: MuMu Installer
+        $file2 = "$downloadDir\MuMuInstaller.exe"
+        if (-not (Test-Path $file2)) {
+            Write-Host "Downloading MuMu Installer (~5GB)..."
+            Invoke-WebRequest -Uri "https://download1321.mediafire.com/3ktrm28o5gsgtnL6pnqncuJt4a6n7I_9MDy5YeFH9NMUSgU7Md215qxKIuLWTt4BkhTDO7tXXwaKhcsphoP41lUpsBiMCJ2TFXj67kPC631cs8MznNpOmObulTHJHCP2_u-gMFUjkVyFelcNRDb6997cvF3tkbXp3wI8AhPkCF5pBQ/u3ljtir2mf5esv1/MuMuInstaller_3.1.7.0_gw-overseas12_all_1712735105.exe" -OutFile $file2 -UserAgent "Mozilla/5.0"
+        }
+
+        Write-Host "All downloads completed!"
+
+    # Keep runner alive (now you can RDP in and use the downloaded files)
+    - name: Keep Alive
+      run: |
+        Write-Host "RDP and files are ready! Connect using the Playit tunnel."
+        Write-Host "This runner will stay alive for 3 hours..."
+        Start-Sleep -Seconds 10800  # 3 hours
