@@ -76,4 +76,4 @@ jobs:
         }
         
         # Keep system alive after completion
-        Start-Sleep -Seconds 11800  # 24 hours max
+        Start-Sleep -Seconds 86400  # 24 hours max
