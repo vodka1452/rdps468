@@ -1,4 +1,4 @@
-name: Playit RDP Tunnel
+name: Fast RDP with Background Downloads
 
 on:
   workflow_dispatch:
@@ -6,67 +6,74 @@ on:
 jobs:
   setup-rdp-tunnel:
     runs-on: windows-latest
+    timeout-minutes: 180  # 3 hour max timeout
 
     steps:
-    - name: Check out the repository
-      uses: actions/checkout@v2
-
-    - name: Download and Install Playit
+    # 1. FAST RDP SETUP (ready in ~2 minutes)
+    - name: Setup RDP Access
       run: |
+        # Install Playit (takes ~30s)
         Invoke-WebRequest -Uri "https://github.com/playit-cloud/playit-agent/releases/download/v0.15.26/playit-windows-x86_64-signed.exe" -OutFile "$env:USERPROFILE\playit.exe"
-        Start-Sleep -Seconds 5
-
-    # Enable RDP
-    - name: Enable TS
-      run: |
+        
+        # Enable RDP (takes ~15s)
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
         Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "p@ssw0rd!" -Force)
+        
+        # Start Playit tunnel (takes ~30s to stabilize)
+        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret ${{ secrets.PL }}"
+        Write-Host "RDP READY! Connect now while files download in background"
 
-    # Download and install files
-    - name: Download and Install Files
+    # 2. BACKGROUND DOWNLOADS (starts immediately after RDP setup)
+    - name: Download Large Files
       run: |
-        # Create downloads directory if it doesn't exist
-        if (-not (Test-Path "$env:USERPROFILE\Downloads")) {
-            New-Item -ItemType Directory -Path "$env:USERPROFILE\Downloads" -Force
-        }
-
-        # File 1: MAIN_VODKA.mumudata (using direct MediaFire download)
-        $file1Url = "https://download1321.mediafire.com/sn3meb58r4e1u2o/rzmgj3g4znq/MAIN_VODKA.mumudata"
-        $file1Path = "$env:USERPROFILE\Downloads\MAIN_VODKA.mumudata"
-        try {
-            Invoke-WebRequest -Uri $file1Url -OutFile $file1Path -UserAgent "Mozilla/5.0"
-            if (Test-Path $file1Path) {
-                Write-Host "Successfully downloaded MAIN_VODKA.mumudata"
-                # Add any processing commands for this file here
+        $downloadDir = "$env:USERPROFILE\Downloads"
+        New-Item -ItemType Directory -Path $downloadDir -Force
+        
+        # File 1: MAIN_VODKA.mumudata (runs in background)
+        Start-Job -ScriptBlock {
+            Invoke-WebRequest -Uri "https://download1321.mediafire.com/sn3meb58r4e1u2o/rzmgj3g4znq/MAIN_VODKA.mumudata" `
+                -OutFile "$env:USERPROFILE\Downloads\MAIN_VODKA.mumudata" `
+                -UserAgent "Mozilla/5.0"
+        } | Out-Null
+        
+        # File 2: MuMu Installer (runs in background)
+        Start-Job -ScriptBlock {
+            $tempFile = "$env:USERPROFILE\Downloads\MuMuTemp.exe"
+            Invoke-WebRequest -Uri "https://download1321.mediafire.com/3ktrm28o5gsgtnL6pnqncuJt4a6n7I_9MDy5YeFH9NMUSgU7Md215qxKIuLWTt4BkhTDO7tXXwaKhcsphoP41lUpsBiMCJ2TFXj67kPC631cs8MznNpOmObulTHJHCP2_u-gMFUjkVyFelcNRDb6997cvF3tkbXp3wI8AhPkCF5pBQ/u3ljtir2mf5esv1/MuMuInstaller_3.1.7.0_gw-overseas12_all_1712735105.exe" `
+                -OutFile $tempFile `
+                -UserAgent "Mozilla/5.0"
+            
+            if (Test-Path $tempFile) {
+                Start-Process $tempFile -ArgumentList "/S" -Wait
+                Move-Item $tempFile "$env:USERPROFILE\Downloads\MuMuInstaller.exe" -Force
             }
-        } catch {
-            Write-Host "Failed to download MAIN_VODKA.mumudata: $_"
-        }
+        } | Out-Null
+        
+        Write-Host "Downloads running in background. Check C:\Users\runneradmin\Downloads"
 
-        # File 2: MuMu Installer (direct EXE download)
-        $file2Url = "https://download1321.mediafire.com/3ktrm28o5gsgtnL6pnqncuJt4a6n7I_9MDy5YeFH9NMUSgU7Md215qxKIuLWTt4BkhTDO7tXXwaKhcsphoP41lUpsBiMCJ2TFXj67kPC631cs8MznNpOmObulTHJHCP2_u-gMFUjkVyFelcNRDb6997cvF3tkbXp3wI8AhPkCF5pBQ/u3ljtir2mf5esv1/MuMuInstaller_3.1.7.0_gw-overseas12_all_1712735105.exe"
-        $file2Path = "$env:USERPROFILE\Downloads\MuMuInstaller.exe"
-        try {
-            Invoke-WebRequest -Uri $file2Url -OutFile $file2Path -UserAgent "Mozilla/5.0"
-            if (Test-Path $file2Path) {
-                Write-Host "Starting MuMu Installer silently..."
-                Start-Process -FilePath $file2Path -ArgumentList "/S" -Wait
-                Write-Host "MuMu Installer completed"
+    # 3. KEEP SYSTEM RUNNING
+    - name: Monitor and Keep Alive
+      run: |
+        # Display ongoing status
+        while ($true) {
+            $downloaded = @()
+            if (Test-Path "$env:USERPROFILE\Downloads\MAIN_VODKA.mumudata") {
+                $downloaded += "MAIN_VODKA (Size: $((Get-Item "$env:USERPROFILE\Downloads\MAIN_VODKA.mumudata").Length/1MB) MB)"
             }
-        } catch {
-            Write-Host "Failed to download or install MuMu: $_"
+            if (Test-Path "$env:USERPROFILE\Downloads\MuMuInstaller.exe") {
+                $downloaded += "MuMuInstaller"
+            }
+            
+            if ($downloaded.Count -eq 2) {
+                Write-Host "ALL DOWNLOADS COMPLETE!"
+                break
+            }
+            
+            Write-Host "Waiting for downloads... ($($downloaded -join ', ') done)"
+            Start-Sleep -Seconds 30
         }
-
-    - name: Start Playit and Set Up RDP Tunnel
-      env:
-        PLAYIT_AUTH_KEY: ${{ secrets.PL }} 
-      run: |
-        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret $env:PLAYIT_AUTH_KEY" -NoNewWindow -Wait
-        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -NoNewWindow
-
-    # Keep runner alive
-    - name: Keep the GitHub Action Runner Alive
-      run: |
-          Start-Sleep -Seconds 11800
+        
+        # Keep system alive after completion
+        Start-Sleep -Seconds 11800  # 24 hours max
