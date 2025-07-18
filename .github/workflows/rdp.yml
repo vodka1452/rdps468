@@ -1,38 +1,68 @@
-name: Playit RDP Tunnel
- 
+name: Playit RDP with MediaFire Backup
+
 on:
   workflow_dispatch:
- 
+
 jobs:
   setup-rdp-tunnel:
     runs-on: windows-latest
- 
+    timeout-minutes: 355  # 5 minutes less than 6h for final backup
+
     steps:
+    # Setup Playit and RDP
     - name: Check out the repository
       uses: actions/checkout@v2
- 
-    - name: Download and Install Playit
+
+    - name: Install tools
       run: |
+        # Install 7-Zip and MediaFire CLI
+        winget install -e --id 7zip.7zip
+        curl -LO https://github.com/timvisee/ffsend/releases/download/v0.2.76/ffsend-v0.2.76-windows-x64.exe
+        ren ffsend-*.exe ffsend.exe
         Invoke-WebRequest -Uri "https://github.com/playit-cloud/playit-agent/releases/download/v0.15.26/playit-windows-x86_64-signed.exe" -OutFile "$env:USERPROFILE\playit.exe"
-        Start-Sleep -Seconds 5  # Give some time for the download to complete
- 
- 
-    # Default, optional.
-    - name: Enable TS
-      run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server'-name "fDenyTSConnections" -Value 0
-    - run: Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-    - run: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
-    - run: Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "p@ssw0rd!" -Force)
- 
-    - name: Start Playit and Set Up RDP Tunnel
+
+    # Enable RDP
+    - name: Configure Remote Desktop
+      run: |
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+        Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "$env:RDP_PASSWORD" -Force)
+
+    # Start Playit and auto-backup
+    - name: Start services
       env:
-        PLAYIT_AUTH_KEY: ${{ secrets.PL }} 
+        PLAYIT_AUTH_KEY: ${{ secrets.PLAYIT_KEY }}
+        MEDIAFIRE_EMAIL: ${{ secrets.MEDIAFIRE_EMAIL }}
+        MEDIAFIRE_PASSWORD: ${{ secrets.MEDIAFIRE_PASSWORD }}
+        BACKUP_PASSWORD: ${{ secrets.BACKUP_PASSWORD }}
+        RDP_PASSWORD: ${{ secrets.RDP_PASSWORD }}
       run: |
-        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret $env:PLAYIT_AUTH_KEY" -NoNewWindow -Wait
-        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -NoNewWindow
- 
- 
-    # Prevent workflow to stop
-    - name: Keep the GitHub Action Runner Alive
+        # Start Playit in background
+        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret $env:PLAYIT_AUTH_KEY" -NoNewWindow
+
+        # Auto-backup loop (every 30 minutes)
+        $job = Start-Job -ScriptBlock {
+          while ($true) {
+            $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+            7z a -t7z -mx5 -p"$using:env:BACKUP_PASSWORD" "C:\backup-$timestamp.7z" "C:\Users\runneradmin\*" -xr!AppData\Local\Temp
+            .\ffsend upload -y -p "$using:env:MEDIAFIRE_PASSWORD" "C:\backup-$timestamp.7z"
+            Remove-Item "C:\backup-$timestamp.7z" -Force
+            Start-Sleep -Seconds 1800  # 30 minutes
+          }
+        }
+
+    # Keep alive
+    - name: Maintain session
+      run: Start-Sleep -Seconds 21000  # 5h 50m (leaves time for final backup)
+
+    # Final backup before termination
+    - name: Final backup
+      if: always()
+      env:
+        MEDIAFIRE_PASSWORD: ${{ secrets.MEDIAFIRE_PASSWORD }}
+        BACKUP_PASSWORD: ${{ secrets.BACKUP_PASSWORD }}
       run: |
-          Start-Sleep -Seconds 23600  # Adjust the duration based on your needs
+        $timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+        7z a -t7z -mx9 -p"$env:BACKUP_PASSWORD" "C:\final-backup.7z" "C:\Users\runneradmin\*"
+        .\ffsend upload -y -p "$env:MEDIAFIRE_PASSWORD" "C:\final-backup.7z"
