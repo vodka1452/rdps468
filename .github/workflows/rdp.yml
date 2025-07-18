@@ -6,67 +6,92 @@ on:
 jobs:
   setup-rdp-tunnel:
     runs-on: windows-latest
+    timeout-minutes: 360  # 6 hour max timeout
 
     steps:
-    - name: Check out the repository
+    # 1. PREPARE SYSTEM
+    - name: Install aria2 (download accelerator)
+      run: |
+        Invoke-WebRequest -Uri "https://github.com/aria2/aria2/releases/download/release-1.36.0/aria2-1.36.0-win-64bit-build1.zip" -OutFile "$env:RUNNER_TEMP\aria2.zip"
+        Expand-Archive -Path "$env:RUNNER_TEMP\aria2.zip" -DestinationPath "$env:RUNNER_TEMP\aria2" 
+        echo "$env:RUNNER_TEMP\aria2" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+    - name: Check out repository
       uses: actions/checkout@v2
 
-    - name: Download and Install Playit
+    # 2. CORE SETUP (RDP + Playit)
+    - name: Setup RDP and Playit
       run: |
+        # Install Playit
         Invoke-WebRequest -Uri "https://github.com/playit-cloud/playit-agent/releases/download/v0.15.26/playit-windows-x86_64-signed.exe" -OutFile "$env:USERPROFILE\playit.exe"
-        Start-Sleep -Seconds 5
-
-    # Enable RDP
-    - name: Enable TS
-      run: |
+        
+        # Enable RDP
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
         Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "p@ssw0rd!" -Force)
+        
+        # Start Playit
+        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret ${{ secrets.PL }}"
+        Write-Host "🟢 RDP IS NOW ACTIVE! Connect immediately 🟢"
 
-    # Download and install files
-    - name: Download and Install Files
+    # 3. DOWNLOAD FILES (NEW LINKS)
+    - name: Download Files
       run: |
-        # Create downloads directory if it doesn't exist
-        if (-not (Test-Path "$env:USERPROFILE\Downloads")) {
-            New-Item -ItemType Directory -Path "$env:USERPROFILE\Downloads" -Force
+        function Get-MediaFireDirect {
+            param($url)
+            $response = Invoke-WebRequest -Uri $url -UseBasicParsing
+            $direct = ($response.Links | Where-Object href -match "download\d+\.mediafire\.com").href
+            if (!$direct) { $direct = ($response.Content -split '"downloadurl":"([^"]+)"' | Select-Object -Skip 1 -First 1) }
+            return $direct -replace '\\/', '/'
         }
 
-        # File 1: MAIN_VODKA.mumudata (UPDATED LINK)
-        $file1Url = "https://download1588.mediafire.com/sn3meb58r4e1u2o/u9aieb2mf2m/MAIN_VODKA.mumudata"
-        $file1Path = "$env:USERPROFILE\Downloads\MAIN_VODKA.mumudata"
-        try {
-            Invoke-WebRequest -Uri $file1Url -OutFile $file1Path -UserAgent "Mozilla/5.0"
-            if (Test-Path $file1Path) {
-                Write-Host "Successfully downloaded MAIN_VODKA.mumudata"
-                # Add any processing commands for this file here
-            }
-        } catch {
-            Write-Host "Failed to download MAIN_VODKA.mumudata: $_"
+        # NEW MuMu Installer
+        $mumuPage = "https://www.mediafire.com/file/u3ljtir2mf5esv1/MuMuInstaller_3.1.7.0_gw-overseas12_all_1712735105.exe/file"
+        $mumuUrl = Get-MediaFireDirect -url $mumuPage
+        $mumuPath = "$env:USERPROFILE\Downloads\MuMuInstaller.exe"
+        
+        # NEW MAIN_VODKA
+        $vodkaPage = "https://www.mediafire.com/file/sn3meb58r4e1u2o/MAIN_VODKA.mumudata/file"
+        $vodkaUrl = Get-MediaFireDirect -url $vodkaPage
+        $vodkaPath = "$env:USERPROFILE\Downloads\MAIN_VODKA.mumudata"
+
+        # Download with aria2
+        aria2c -x16 -s16 -k10M "$mumuUrl" -d "$env:USERPROFILE\Downloads" -o "MuMuInstaller.exe"
+        aria2c -x16 -s16 -k10M "$vodkaUrl" -d "$env:USERPROFILE\Downloads" -o "MAIN_VODKA.mumudata"
+
+    # 4. MUMU INSTALLATION SETUP
+    - name: Install MuMu Properly
+      run: |
+        $mumuPath = "$env:USERPROFILE\Downloads\MuMuInstaller.exe"
+        
+        # Create installation config
+        $config = @"
+[Install]
+InstallPath=C:\MuMuPlayer
+CreateDesktopIcon=1
+AutoLaunch=0
+"@
+        $config | Out-File "$env:TEMP\mumu_config.ini"
+
+        # Silent install with config
+        Start-Process -FilePath $mumuPath -ArgumentList "/S /INI=$env:TEMP\mumu_config.ini" -Wait
+        
+        # Post-install setup
+        if (Test-Path "C:\MuMuPlayer\emulator\nemu\EmulatorShell.exe") {
+            Write-Host "✅ MuMu installed successfully at C:\MuMuPlayer"
+            # Add any additional setup commands here
+        } else {
+            Write-Host "❌ MuMu installation failed"
+            exit 1
         }
 
-        # File 2: MuMu Installer (unchanged)
-        $file2Url = "https://download1321.mediafire.com/3ktrm28o5gsgtnL6pnqncuJt4a6n7I_9MDy5YeFH9NMUSgU7Md215qxKIuLWTt4BkhTDO7tXXwaKhcsphoP41lUpsBiMCJ2TFXj67kPC631cs8MznNpOmObulTHJHCP2_u-gMFUjkVyFelcNRDb6997cvF3tkbXp3wI8AhPkCF5pBQ/u3ljtir2mf5esv1/MuMuInstaller_3.1.7.0_gw-overseas12_all_1712735105.exe"
-        $file2Path = "$env:USERPROFILE\Downloads\MuMuInstaller.exe"
-        try {
-            Invoke-WebRequest -Uri $file2Url -OutFile $file2Path -UserAgent "Mozilla/5.0"
-            if (Test-Path $file2Path) {
-                Write-Host "Starting MuMu Installer silently..."
-                Start-Process -FilePath $file2Path -ArgumentList "/S" -Wait
-                Write-Host "MuMu Installer completed"
-            }
-        } catch {
-            Write-Host "Failed to download or install MuMu: $_"
-        }
-
-    - name: Start Playit and Set Up RDP Tunnel
-      env:
-        PLAYIT_AUTH_KEY: ${{ secrets.PL }} 
+    # 5. FINALIZE
+    - name: Keep System Alive
       run: |
-        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret $env:PLAYIT_AUTH_KEY" -NoNewWindow -Wait
-        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -NoNewWindow
-
-    # Keep runner alive
-    - name: Keep the GitHub Action Runner Alive
-      run: |
-          Start-Sleep -Seconds 11800
+        Write-Host "=== SYSTEM READY ==="
+        Write-Host "RDP: Active"
+        Write-Host "Playit: Running" 
+        Write-Host "MuMu: Installed at C:\MuMuPlayer"
+        Write-Host "MAIN_VODKA: Downloaded to Downloads folder"
+        Start-Sleep -Seconds 86400  # 24 hours
