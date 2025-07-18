@@ -1,0 +1,80 @@
+name: Playit RDP with MediaFire Sync
+
+on:
+  workflow_dispatch:
+
+jobs:
+  setup-rdp-tunnel:
+    runs-on: windows-latest
+    timeout-minutes: 350  # Allows 10 mins for final sync
+
+    steps:
+    # 1. Install Playit (original)
+    - name: Setup Playit
+      run: |
+        Invoke-WebRequest -Uri "https://github.com/playit-cloud/playit-agent/releases/download/v0.15.26/playit-windows-x86_64-signed.exe" -OutFile "$env:USERPROFILE\playit.exe"
+        Start-Sleep -Seconds 5
+
+    # 2. Install MediaFire Tools (new)
+    - name: Install MediaFire Sync Tools
+      run: |
+        # Install rclone (for MediaFire)
+        curl -LO https://downloads.rclone.org/v1.65.0/rclone-v1.65.0-windows-amd64.zip
+        Expand-Archive rclone-*.zip
+        mv rclone-*/rclone.exe "$env:USERPROFILE\rclone.exe"
+        del rclone-*.zip
+        Remove-Item -Recurse -Force rclone-*
+
+        # Configure rclone (MediaFire)
+        @"
+[mediafire]
+type = webdav
+url = https://www.mediafire.com/dav/
+vendor = other
+user = $env:MEDIAFIRE_EMAIL
+pass = $env:MEDIAFIRE_PASSWORD
+"@ | Out-File -FilePath "$env:USERPROFILE\.rclone.conf" -Encoding ASCII
+
+    # 3. Enable RDP (original)
+    - name: Configure Remote Desktop
+      run: |
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+        Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "$env:RDP_PASS" -Force)
+
+    # 4. Sync from MediaFire (new)
+    - name: Restore Files from MediaFire
+      env:
+        MEDIAFIRE_EMAIL: ${{ secrets.MEDIAFIRE_EMAIL }}
+        MEDIAFIRE_PASSWORD: ${{ secrets.MEDIAFIRE_PASSWORD }}
+      run: |
+        "$env:USERPROFILE\rclone.exe" copy "mediafire:/RDP_Storage/" "C:\Users\runneradmin\" --config "$env:USERPROFILE\.rclone.conf" -v
+
+    # 5. Start Playit (original)
+    - name: Establish Tunnel
+      env:
+        PLAYIT_AUTH_KEY: ${{ secrets.PL }}
+      run: |
+        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret $env:PLAYIT_AUTH_KEY" -NoNewWindow
+        Start-Sleep -Seconds 10
+
+    # 6. Continuous Sync (new)
+    - name: Auto-Sync to MediaFire
+      env:
+        MEDIAFIRE_EMAIL: ${{ secrets.MEDIAFIRE_EMAIL }}
+        MEDIAFIRE_PASSWORD: ${{ secrets.MEDIAFIRE_PASSWORD }}
+      run: |
+        while ($true) {
+          "$env:USERPROFILE\rclone.exe" sync "C:\Users\runneradmin\" "mediafire:/RDP_Storage/" --config "$env:USERPROFILE\.rclone.conf" -v
+          Start-Sleep -Seconds 900  # Sync every 15 minutes
+        }
+
+    # 7. Final Sync (new)
+    - name: Final MediaFire Backup
+      if: always()
+      env:
+        MEDIAFIRE_EMAIL: ${{ secrets.MEDIAFIRE_EMAIL }}
+        MEDIAFIRE_PASSWORD: ${{ secrets.MEDIAFIRE_PASSWORD }}
+      run: |
+        "$env:USERPROFILE\rclone.exe" sync "C:\Users\runneradmin\" "mediafire:/RDP_Storage/" --config "$env:USERPROFILE\.rclone.conf" -v
