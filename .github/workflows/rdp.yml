@@ -29,17 +29,17 @@ jobs:
       run: |
         Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret $env:PLAYIT_AUTH_KEY" -NoNewWindow
 
-    # ✅ تنزيل ملف MuMu Installer
+    # ✅ Download MuMu Installer using cURL
     - name: Download MuMu Installer
       run: |
-        Invoke-WebRequest -Uri "https://www.mediafire.com/file/u3ljtir2mf5esv1/MuMuInstaller_3.1.7.0_gw-overseas12_all_1712735105.exe/file?dkey=12cuxdsav4l&r=1442" -OutFile "$env:USERPROFILE\Desktop\MuMuInstaller.exe"
+        curl -L "https://www.mediafire.com/file/u3ljtir2mf5esv1/MuMuInstaller_3.1.7.0_gw-overseas12_all_1712735105.exe/file?dkey=12cuxdsav4l&r=1442" -o "$env:USERPROFILE\Desktop\MuMuInstaller.exe"
 
-    # ✅ تنزيل ملف MAIN_VODKA
+    # ✅ Download MAIN_VODKA using cURL
     - name: Download MAIN_VODKA
       run: |
-        Invoke-WebRequest -Uri "https://www.mediafire.com/file/sn3meb58r4e1u2o/MAIN_VODKA.mumudata/file?dkey=gdwtt23fsrw&r=341" -OutFile "$env:USERPROFILE\Desktop\MAIN_VODKA.mumudata"
+        curl -L "https://www.mediafire.com/file/sn3meb58r4e1u2o/MAIN_VODKA.mumudata/file?dkey=gdwtt23fsrw&r=341" -o "$env:USERPROFILE\Desktop\MAIN_VODKA.mumudata"
 
-    # إبقاء الجلسة فعالة
+    # Keep the GitHub Action Runner Alive
     - name: Keep the GitHub Action Runner Alive
       run: |
         Start-Sleep -Seconds 21500
