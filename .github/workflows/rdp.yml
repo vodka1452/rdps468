@@ -1,43 +1,31 @@
-name: Playit RDP Tunnel with Avica + OCR
+name: Avica Remote Desktop Setup
 
 on:
   workflow_dispatch:
 
 jobs:
-  setup-rdp-tunnel:
+  setup-avica:
     runs-on: windows-latest
 
     steps:
-    - name: Check out the repository
-      uses: actions/checkout@v4  # Updated from v2
-
-    - name: Download and Install Playit
-      run: |
-        Invoke-WebRequest -Uri "https://github.com/playit-cloud/playit-agent/releases/download/v0.15.26/playit-windows-x86_64-signed.exe" -OutFile "$env:USERPROFILE\playit.exe"
-        Start-Sleep -Seconds 5
-
-    - name: Enable RDP
-      run: |
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
-        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
-        Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "p@ssw0rd!" -Force)
-
-    - name: Start Playit Tunnel
-      env:
-        PLAYIT_AUTH_KEY: ${{ secrets.PL }}
-      run: |
-        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret $env:PLAYIT_AUTH_KEY" -NoNewWindow -Wait
-        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -NoNewWindow
+    - name: Check out repository
+      uses: actions/checkout@v4
 
     # STEP 1: Install Avica
-    - name: Install Avica and Capture Screen
+    - name: Install Avica
       run: |
+        # Download and install Avica silently
         Invoke-WebRequest -Uri "https://www.avica.com/download/Avica_Setup.exe" -OutFile "$env:RUNNER_TEMP\Avica.exe"
         Start-Process "$env:RUNNER_TEMP\Avica.exe" /S -Wait
+        
+        # Launch Avica
         Start-Process "C:\Program Files\Avica\Avica.exe"
-        Start-Sleep -Seconds 15
+        Start-Sleep -Seconds 15  # Wait for Avica to initialize
 
+    # STEP 2: Capture Avica Connection Code
+    - name: Capture Screen
+      run: |
+        # Take screenshot of Avica window
         Add-Type -AssemblyName System.Windows.Forms, System.Drawing
         $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
         $bitmap = New-Object System.Drawing.Bitmap($screen.Width, $screen.Height)
@@ -45,28 +33,31 @@ jobs:
         $graphics.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
         $bitmap.Save("$env:RUNNER_TEMP\avica_screenshot.png")
 
-    # STEP 2: OCR Extraction
-    - name: Extract Avica Code with Tesseract
+    # STEP 3: OCR Extraction
+    - name: Extract Code with Tesseract
       run: |
+        # Install OCR tool
         choco install tesseract -y --no-progress
+        
+        # Extract text from screenshot
         tesseract "$env:RUNNER_TEMP\avica_screenshot.png" "$env:RUNNER_TEMP\avica_code" -l eng
         $avicaCode = Get-Content "$env:RUNNER_TEMP\avica_code.txt" -Raw
-        echo "::add-mask::$avicaCode"
+        echo "::add-mask::$avicaCode"  # Hide code in logs
         echo "AVICA_CODE=$avicaCode" >> $env:GITHUB_ENV
 
-    # UPDATED ARTIFACT UPLOAD (v4)
-    - name: Upload Avica Data
+    # Output Options (Choose one)
+    - name: Upload Results
       uses: actions/upload-artifact@v4
       with:
         name: avica-connection
         path: |
           ${{ runner.temp }}/avica_screenshot.png
           ${{ runner.temp }}/avica_code.txt
-        retention-days: 1  # Auto-delete after 1 day for security
+        retention-days: 1  # Auto-delete after 1 day
 
-    # OPTIONAL: Discord Notification
-    - name: Notify Discord (Optional)
-      if: false  # Set to 'true' and add webhook secret to enable
+    # Alternative: Discord Webhook (more secure)
+    - name: Send to Discord (Optional)
+      if: false  # Change to 'true' and add webhook secret to enable
       run: |
         $payload = @{
           content = "Avica Connection Code:`n````$env:AVICA_CODE```"
@@ -74,4 +65,4 @@ jobs:
         Invoke-RestMethod -Uri "${{ secrets.DISCORD_WEBHOOK }}" -Method Post -Body $payload -ContentType 'application/json'
 
     - name: Keep Runner Alive
-      run: Start-Sleep -Seconds 11800
+      run: Start-Sleep -Seconds 11800  # ~3.3 hours (max timeout)
