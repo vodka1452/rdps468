@@ -8,6 +8,8 @@ jobs:
     runs-on: windows-latest
  
     steps:
+    - name: Check out the repository
+      uses: actions/checkout@v2
 
       - name: Downloading & Installing Essentials
         run: |
@@ -16,8 +18,6 @@ jobs:
 
       - name: Show Website
         run: cmd /c show.bat
-    - name: Check out the repository
-      uses: actions/checkout@v2
  
     - name: Download and Install Playit
       run: |
