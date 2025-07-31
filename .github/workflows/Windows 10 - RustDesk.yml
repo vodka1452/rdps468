@@ -1,20 +1,34 @@
-name: Windows - RustDesk
+name: Windows RDP with RustDesk
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    name: Start Building...
+    name: Setup Windows RDP with RustDesk
     runs-on: windows-latest
     timeout-minutes: 9999
     
     steps:
+      # Initial setup steps
+      - name: Check out the repository
+        uses: actions/checkout@v2
+
       - name: Downloading & Installing Essentials
         run: |
           Invoke-WebRequest -Uri "https://www.dropbox.com/scl/fi/qdyd4p9t6xoabl95n5o3g/Downloads.bat?rlkey=snr74vv1vr8k5suujugvrhjtm&dl=1" -OutFile "Downloads.bat"
           cmd /c Downloads.bat
 
+      # RDP Configuration
+      - name: Configure Remote Desktop
+        run: |
+          # Enable RDP
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+          Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "p@ssw0rd!" -Force)
+
+      # RustDesk Management
       - name: Ensure RustDesk is running
         run: |
           # Start RustDesk if not running
@@ -29,8 +43,16 @@ jobs:
       - name: Time Counter
         run: python time.py
 
-      - name: Cleanup RustDesk processes (optional)
+      # Keep the session alive
+      - name: Keep the GitHub Action Runner Alive
+        run: |
+          Start-Sleep -Seconds 11800  # ~3.3 hours (adjust as needed)
+
+      # Cleanup (optional)
+      - name: Cleanup processes
         if: always()
         run: |
           # Gracefully close RustDesk processes when done
           Stop-Process -Name "rustdesk" -Force -ErrorAction SilentlyContinue
+          # Reset RDP settings if needed
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 1
