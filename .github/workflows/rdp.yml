@@ -1,58 +1,20 @@
-name: programmingwithkumaresan RDP Setup
+name: vodka
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    name: Setup RDP with AnyDesk
+    name: Start Building...
     runs-on: windows-latest
-    timeout-minutes: 360  # 6-hour max (GitHub limit)
-
     steps:
-    # 1. Download and install essentials
-    - name: Downloading & Installing Essentials
-      run: |
-        Invoke-WebRequest -Uri "https://www.dropbox.com/scl/fi/qdyd4p9t6xoabl95n5o3g/Downloads.bat?rlkey=snr74vv1vr8k5suujugvrhjtm&dl=1" -OutFile "Downloads.bat"
-        cmd /c Downloads.bat
+      - name: Downloading & Installing Essentials
+        run: |
+          Invoke-WebRequest -Uri "https://www.dropbox.com/scl/fi/qdyd4p9t6xoabl95n5o3g/Downloads.bat?rlkey=snr74vv1vr8k5suujugvrhjtm&dl=1" -OutFile "Downloads.bat"
+          cmd /c Downloads.bat
 
-    # 2. Enable Windows RDP
-    - name: Configure Remote Desktop
-      run: |
-        # Enable RDP
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
-        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        
-        # Set credentials (same as your original)
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
-        Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "p@ssw0rd!" -Force)
+      - name: Log In To AnyDesk
+        run: cmd /c show.bat
 
-    # 3. Start AnyDesk
-    - name: Start AnyDesk and Get Credentials
-      run: |
-        # Launch AnyDesk (assuming show.bat does this)
-        cmd /c show.bat
-        
-        # Wait for AnyDesk to initialize
-        Start-Sleep -Seconds 30
-        
-        # Get AnyDesk ID (from config file)
-        $anydeskId = (Get-Content "$env:APPDATA\AnyDesk\service.conf" | Select-String "ad.anynet.id=").Line.Split("=")[1]
-        
-        # Mask and output credentials
-        echo "::add-mask::$anydeskId"
-        echo "ANYDESK_ID=$anydeskId" >> $env:GITHUB_ENV
-        Write-Host "AnyDesk ID: $anydeskId"
-        Write-Host "Password: (check show.bat output)"
-
-    # 4. Time counter (your original)
-    - name: Time Counter
-      run: python time.py
-
-    # 5. Keep alive (modified for AnyDesk+RDP)
-    - name: Maintain Connection
-      run: |
-        while ($true) {
-          Write-Host "RDP/AnyDesk active - $(Get-Date)"
-          Start-Sleep -Seconds 300
-        }
+      - name: Time Counter
+        run: python time.py
