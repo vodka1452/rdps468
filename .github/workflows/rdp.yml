@@ -9,7 +9,7 @@ jobs:
 
     steps:
     - name: Check out the repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4  # Updated from v2
 
     - name: Download and Install Playit
       run: |
@@ -30,8 +30,8 @@ jobs:
         Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret $env:PLAYIT_AUTH_KEY" -NoNewWindow -Wait
         Start-Process -FilePath "$env:USERPROFILE\playit.exe" -NoNewWindow
 
-    # STEP 1: Install Avica and capture screenshot
-    - name: Install Avica
+    # STEP 1: Install Avica
+    - name: Install Avica and Capture Screen
       run: |
         Invoke-WebRequest -Uri "https://www.avica.com/download/Avica_Setup.exe" -OutFile "$env:RUNNER_TEMP\Avica.exe"
         Start-Process "$env:RUNNER_TEMP\Avica.exe" /S -Wait
@@ -45,33 +45,33 @@ jobs:
         $graphics.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
         $bitmap.Save("$env:RUNNER_TEMP\avica_screenshot.png")
 
-    # STEP 2: OCR Extraction (Tesseract)
-    - name: Extract Avica Code with OCR
+    # STEP 2: OCR Extraction
+    - name: Extract Avica Code with Tesseract
       run: |
         choco install tesseract -y --no-progress
         tesseract "$env:RUNNER_TEMP\avica_screenshot.png" "$env:RUNNER_TEMP\avica_code" -l eng
         $avicaCode = Get-Content "$env:RUNNER_TEMP\avica_code.txt" -Raw
-        echo "::add-mask::$avicaCode"  # Masks the code in logs
+        echo "::add-mask::$avicaCode"
         echo "AVICA_CODE=$avicaCode" >> $env:GITHUB_ENV
 
-    # Secure Output Options (Choose ONE):
-    # OPTION A: Upload to Secure Artifact (Least Secure)
-    - name: Upload Results
-      uses: actions/upload-artifact@v3
+    # UPDATED ARTIFACT UPLOAD (v4)
+    - name: Upload Avica Data
+      uses: actions/upload-artifact@v4
       with:
-        name: avica-data
+        name: avica-connection
         path: |
           ${{ runner.temp }}/avica_screenshot.png
           ${{ runner.temp }}/avica_code.txt
+        retention-days: 1  # Auto-delete after 1 day for security
 
-    # OPTION B: Discord Webhook (More Secure)
-    - name: Send to Discord
-      if: false  # Change to 'true' to enable
+    # OPTIONAL: Discord Notification
+    - name: Notify Discord (Optional)
+      if: false  # Set to 'true' and add webhook secret to enable
       run: |
-        $discordMsg = @{
-          content = "Avica Connection Code: `n$env:AVICA_CODE"
+        $payload = @{
+          content = "Avica Connection Code:`n````$env:AVICA_CODE```"
         } | ConvertTo-Json
-        Invoke-RestMethod -Uri "${{ secrets.DISCORD_WEBHOOK }}" -Method Post -Body $discordMsg -ContentType "application/json"
+        Invoke-RestMethod -Uri "${{ secrets.DISCORD_WEBHOOK }}" -Method Post -Body $payload -ContentType 'application/json'
 
-    - name: Keep Alive
+    - name: Keep Runner Alive
       run: Start-Sleep -Seconds 11800
