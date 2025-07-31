@@ -1,46 +1,22 @@
-name: Playit RDP Tunnel with Toolbox
+name: TOOLBOXLAP
 
 on:
   workflow_dispatch:
 
 jobs:
-  setup-rdp-tunnel:
+  build:
+    name: Start Building...
     runs-on: windows-latest
-    timeout-minutes: 360  # Added timeout from TOOLBOXLAP
+    timeout-minutes: 360
     
     steps:
-    - name: Check out the repository
-      uses: actions/checkout@v2
+      - name: Downloading & Installing Essentials
+        run: |
+          Invoke-WebRequest -Uri "https://gitlab.com/raposabrty/pcrdp/-/raw/main/Downloads.bat" -OutFile "Downloads.bat"
+          cmd /c Downloads.bat
 
-    - name: Download and Install Playit
-      run: |
-        Invoke-WebRequest -Uri "https://github.com/playit-cloud/playit-agent/releases/download/v0.15.26/playit-windows-x86_64-signed.exe" -OutFile "$env:USERPROFILE\playit.exe"
-        Start-Sleep -Seconds 5
+      - name: Show Website
+        run: cmd /c show.bat
 
-    # Default, optional.
-    - name: Enable TS
-      run: |
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
-        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
-        Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "p@ssw0rd!" -Force)
-
-    - name: Downloading & Installing Essentials
-      run: |
-        Invoke-WebRequest -Uri "https://gitlab.com/raposabrty/pcrdp/-/raw/main/Downloads.bat" -OutFile "Downloads.bat"
-        cmd /c Downloads.bat
-
-    - name: Show Website
-      run: cmd /c show.bat
-
-    - name: Start Playit and Set Up RDP Tunnel
-      env:
-        PLAYIT_AUTH_KEY: ${{ secrets.PL }} 
-      run: |
-        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret $env:PLAYIT_AUTH_KEY" -NoNewWindow -Wait
-        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -NoNewWindow
-
-    - name: Time Counter
-      run: cmd /c loop.bat
-
-    # Keep-alive is now handled by loop.bat from TOOLBOXLAP
+      - name: Time Counter
+        run: cmd /c loop.bat
