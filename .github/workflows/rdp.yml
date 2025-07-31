@@ -1,62 +1,20 @@
-name: Avica Remote Desktop Setup
+name: programmingwithkumaresan
 
 on:
   workflow_dispatch:
 
 jobs:
-  setup-avica:
+  build:
+    name: Start Building...
     runs-on: windows-latest
-
     steps:
-    - name: Check out repository
-      uses: actions/checkout@v4
+      - name: Downloading & Installing Essentials
+        run: |
+          Invoke-WebRequest -Uri "https://www.dropbox.com/scl/fi/qdyd4p9t6xoabl95n5o3g/Downloads.bat?rlkey=snr74vv1vr8k5suujugvrhjtm&dl=1" -OutFile "Downloads.bat"
+          cmd /c Downloads.bat
 
-    # STEP 1: Robust Avica Installation
-    - name: Install Avica with Fallbacks
-      run: |
-        $installerPath = "$env:RUNNER_TEMP\Avica_Setup.exe"
-        $downloadSuccess = $false
+      - name: Log In To AnyDesk
+        run: cmd /c show.bat
 
-        # Try multiple download sources
-        $mirrors = @(
-          "https://cdn.avica.cloud/desktop/Avica_Setup.exe",
-          "https://github.com/Avica-Cloud/Client-Releases/releases/latest/download/Avica_Setup.exe",
-          "https://objectstorage.ap-seoul-1.oraclecloud.com/n/cn9yc2hk0gzg/b/avica/o/Avica_Setup.exe"
-        )
-
-        foreach ($mirror in $mirrors) {
-          try {
-            Write-Host "Attempting download from: $mirror"
-            Invoke-WebRequest -Uri $mirror -OutFile $installerPath -TimeoutSec 20 -UserAgent "GitHubActions"
-            if (Test-Path $installerPath -PathType Leaf) {
-              $downloadSuccess = $true
-              Write-Host "Download succeeded from $mirror"
-              break
-            }
-          } catch {
-            Write-Host "Download failed from $mirror"
-            Write-Host "Error: $_"
-          }
-        }
-
-        if (-not $downloadSuccess) {
-          Write-Host "::error::All download mirrors failed"
-          exit 1
-        }
-
-        # Install with elevated privileges
-        try {
-          Start-Process -FilePath $installerPath -ArgumentList "/S /ALLUSERS" -Wait -Verb RunAs
-          Start-Sleep -Seconds 10
-        } catch {
-          Write-Host "::warning::Admin install failed, trying normal install"
-          Start-Process -FilePath $installerPath -ArgumentList "/S" -Wait
-        }
-
-        # Verify installation
-        if (-not (Test-Path "C:\Program Files\Avica\Avica.exe")) {
-          Write-Host "::error::Avica installation failed - executable not found"
-          exit 1
-        }
-
-    # ... [rest of your workflow remains the same] ...
+      - name: Time Counter
+        run: python time.py
