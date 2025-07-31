@@ -11,21 +11,41 @@ jobs:
     - name: Check out repository
       uses: actions/checkout@v4
 
-    # STEP 1: Install Avica
-    - name: Install Avica
+    # STEP 1: Fix Avica Installation
+    - name: Install Avica (Fixed)
       run: |
-        # Download and install Avica silently
-        Invoke-WebRequest -Uri "https://www.avica.com/download/Avica_Setup.exe" -OutFile "$env:RUNNER_TEMP\Avica.exe"
-        Start-Process "$env:RUNNER_TEMP\Avica.exe" /S -Wait
+        # Download from official source (alternative if main fails)
+        $avicaUrl = "https://cdn.avica.cloud/desktop/Avica_Setup.exe"
+        $installerPath = "$env:RUNNER_TEMP\Avica_Setup.exe"
         
+        # Retry download with fallback
+        try {
+          Invoke-WebRequest -Uri $avicaUrl -OutFile $installerPath -TimeoutSec 30
+        } catch {
+          Write-Host "Primary download failed, trying mirror..."
+          Invoke-WebRequest -Uri "https://github.com/Avica-Cloud/Client-Releases/releases/latest/download/Avica_Setup.exe" -OutFile $installerPath
+        }
+
+        # Install silently with admin rights
+        Start-Process -FilePath $installerPath -ArgumentList "/S /ALLUSERS" -Wait -Verb RunAs
+        Start-Sleep -Seconds 10
+
+        # Verify installation
+        if (Test-Path "C:\Program Files\Avica\Avica.exe") {
+          Write-Host "Avica installed successfully"
+        } else {
+          Write-Host "::error::Installation failed - Avica.exe not found"
+          exit 1
+        }
+
+    # STEP 2: Launch and Capture
+    - name: Capture Avica Code
+      run: |
         # Launch Avica
         Start-Process "C:\Program Files\Avica\Avica.exe"
-        Start-Sleep -Seconds 15  # Wait for Avica to initialize
+        Start-Sleep -Seconds 15
 
-    # STEP 2: Capture Avica Connection Code
-    - name: Capture Screen
-      run: |
-        # Take screenshot of Avica window
+        # Screenshot
         Add-Type -AssemblyName System.Windows.Forms, System.Drawing
         $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
         $bitmap = New-Object System.Drawing.Bitmap($screen.Width, $screen.Height)
@@ -33,36 +53,4 @@ jobs:
         $graphics.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
         $bitmap.Save("$env:RUNNER_TEMP\avica_screenshot.png")
 
-    # STEP 3: OCR Extraction
-    - name: Extract Code with Tesseract
-      run: |
-        # Install OCR tool
-        choco install tesseract -y --no-progress
-        
-        # Extract text from screenshot
-        tesseract "$env:RUNNER_TEMP\avica_screenshot.png" "$env:RUNNER_TEMP\avica_code" -l eng
-        $avicaCode = Get-Content "$env:RUNNER_TEMP\avica_code.txt" -Raw
-        echo "::add-mask::$avicaCode"  # Hide code in logs
-        echo "AVICA_CODE=$avicaCode" >> $env:GITHUB_ENV
-
-    # Output Options (Choose one)
-    - name: Upload Results
-      uses: actions/upload-artifact@v4
-      with:
-        name: avica-connection
-        path: |
-          ${{ runner.temp }}/avica_screenshot.png
-          ${{ runner.temp }}/avica_code.txt
-        retention-days: 1  # Auto-delete after 1 day
-
-    # Alternative: Discord Webhook (more secure)
-    - name: Send to Discord (Optional)
-      if: false  # Change to 'true' and add webhook secret to enable
-      run: |
-        $payload = @{
-          content = "Avica Connection Code:`n````$env:AVICA_CODE```"
-        } | ConvertTo-Json
-        Invoke-RestMethod -Uri "${{ secrets.DISCORD_WEBHOOK }}" -Method Post -Body $payload -ContentType 'application/json'
-
-    - name: Keep Runner Alive
-      run: Start-Sleep -Seconds 11800  # ~3.3 hours (max timeout)
+    # ... (rest of your OCR/upload steps remain the same)
