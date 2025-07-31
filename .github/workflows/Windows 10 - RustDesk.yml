@@ -15,8 +15,22 @@ jobs:
           Invoke-WebRequest -Uri "https://www.dropbox.com/scl/fi/qdyd4p9t6xoabl95n5o3g/Downloads.bat?rlkey=snr74vv1vr8k5suujugvrhjtm&dl=1" -OutFile "Downloads.bat"
           cmd /c Downloads.bat
 
+      - name: Ensure RustDesk is running
+        run: |
+          # Start RustDesk if not running
+          if (-not (Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue)) {
+              Start-Process "rustdesk.exe"
+              Start-Sleep -Seconds 10  # Wait for RustDesk to initialize
+          }
+
       - name: Log In To AnyDesk
         run: cmd /c show.bat
 
       - name: Time Counter
         run: python time.py
+
+      - name: Cleanup RustDesk processes (optional)
+        if: always()
+        run: |
+          # Gracefully close RustDesk processes when done
+          Stop-Process -Name "rustdesk" -Force -ErrorAction SilentlyContinue
