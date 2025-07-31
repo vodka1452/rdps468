@@ -1,71 +1,58 @@
-name: RustDesk RDP Setup
+name: programmingwithkumaresan RDP Setup
 
 on:
   workflow_dispatch:
 
 jobs:
-  setup-rdp:
+  build:
+    name: Setup RDP with AnyDesk
     runs-on: windows-latest
-    timeout-minutes: 360  # 6 hours max (GitHub limit)
+    timeout-minutes: 360  # 6-hour max (GitHub limit)
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    # 1. Install RustDesk
-    - name: Install RustDesk
+    # 1. Download and install essentials
+    - name: Downloading & Installing Essentials
       run: |
-        # Download portable version (no admin needed)
-        $rustdeskUrl = "https://github.com/rustdesk/rustdesk/releases/download/1.2.3/rustdesk-1.2.3-windows_x64.zip"
-        Invoke-WebRequest -Uri $rustdeskUrl -OutFile "$env:RUNNER_TEMP\rustdesk.zip"
-        
-        # Extract and prepare
-        Expand-Archive -Path "$env:RUNNER_TEMP\rustdesk.zip" -DestinationPath "$env:RUNNER_TEMP\rustdesk"
-        $rustdeskExe = Get-ChildItem "$env:RUNNER_TEMP\rustdesk\" -Filter "rustdesk.exe" -Recurse | Select-Object -First 1
+        Invoke-WebRequest -Uri "https://www.dropbox.com/scl/fi/qdyd4p9t6xoabl95n5o3g/Downloads.bat?rlkey=snr74vv1vr8k5suujugvrhjtm&dl=1" -OutFile "Downloads.bat"
+        cmd /c Downloads.bat
 
-    # 2. Enable RDP (for fallback)
+    # 2. Enable Windows RDP
     - name: Configure Remote Desktop
       run: |
+        # Enable RDP
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
-        Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "RustDeskRDP@123" -Force)
-
-    # 3. Start RustDesk and get credentials
-    - name: Start RustDesk and Get ID/Password
-      run: |
-        # Start RustDesk in background
-        Start-Process -FilePath "$env:RUNNER_TEMP\rustdesk\$($rustdeskExe.Name)" -ArgumentList "--server" -WindowStyle Hidden
         
-        # Wait for initialization
+        # Set credentials (same as your original)
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+        Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "p@ssw0rd!" -Force)
+
+    # 3. Start AnyDesk
+    - name: Start AnyDesk and Get Credentials
+      run: |
+        # Launch AnyDesk (assuming show.bat does this)
+        cmd /c show.bat
+        
+        # Wait for AnyDesk to initialize
         Start-Sleep -Seconds 30
         
-        # Get RustDesk ID (from config file)
-        $configPath = "$env:APPDATA\RustDesk\config\RustDesk.toml"
-        $rustdeskId = (Get-Content $configPath | Select-String "id = ").Line.Split('"')[1]
+        # Get AnyDesk ID (from config file)
+        $anydeskId = (Get-Content "$env:APPDATA\AnyDesk\service.conf" | Select-String "ad.anynet.id=").Line.Split("=")[1]
         
-        # Get temporary password (changes on each start)
-        $rustdeskPass = (Get-Process -Name "rustdesk" -ErrorAction SilentlyContinue).MainWindowTitle -replace ".*Password: ",""
-        
-        # Store credentials (masked in logs)
-        echo "::add-mask::$rustdeskId"
-        echo "::add-mask::$rustdeskPass"
-        echo "RUSTDESK_ID=$rustdeskId" >> $env:GITHUB_ENV
-        echo "RUSTDESK_PASS=$rustdeskPass" >> $env:GITHUB_ENV
+        # Mask and output credentials
+        echo "::add-mask::$anydeskId"
+        echo "ANYDESK_ID=$anydeskId" >> $env:GITHUB_ENV
+        Write-Host "AnyDesk ID: $anydeskId"
+        Write-Host "Password: (check show.bat output)"
 
-    # 4. Output connection info
-    - name: Display Connection Details
-      run: |
-        Write-Host "======================================"
-        Write-Host "RustDesk Connection Details:"
-        Write-Host "ID: $env:RUSTDESK_ID"
-        Write-Host "Password: $env:RUSTDESK_PASS"
-        Write-Host "======================================"
+    # 4. Time counter (your original)
+    - name: Time Counter
+      run: python time.py
 
-    # 5. Keep alive (max 6 hours)
+    # 5. Keep alive (modified for AnyDesk+RDP)
     - name: Maintain Connection
       run: |
-        # Combine RDP and RustDesk keep-alive
         while ($true) {
-          Write-Host "RDP/RustDesk active - $(Get-Date)"
-          Start-Sleep -Seconds 300  # Prevent timeout
+          Write-Host "RDP/AnyDesk active - $(Get-Date)"
+          Start-Sleep -Seconds 300
         }
