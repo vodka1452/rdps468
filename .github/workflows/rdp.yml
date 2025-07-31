@@ -1,22 +1,77 @@
-name: Avica
- 
+name: Playit RDP Tunnel with Avica + OCR
+
 on:
   workflow_dispatch:
- 
+
 jobs:
-  build:
-    name: Start Building...
+  setup-rdp-tunnel:
     runs-on: windows-latest
-    timeout-minutes: 360
- 
+
     steps:
-      - name: Downloading & Installing Essentials
-        run: |
-          Invoke-WebRequest -Uri "https://gitlab.com/raposabrty/pcrdp/-/raw/main/Downloads.bat" -OutFile "Downloads.bat"
-          cmd /c Downloads.bat
- 
-      - name: Show Website
-        run: cmd /c show.bat
- 
-      - name: Time Counter
-        run: cmd /c loop.bat
+    - name: Check out the repository
+      uses: actions/checkout@v2
+
+    - name: Download and Install Playit
+      run: |
+        Invoke-WebRequest -Uri "https://github.com/playit-cloud/playit-agent/releases/download/v0.15.26/playit-windows-x86_64-signed.exe" -OutFile "$env:USERPROFILE\playit.exe"
+        Start-Sleep -Seconds 5
+
+    - name: Enable RDP
+      run: |
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+        Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "p@ssw0rd!" -Force)
+
+    - name: Start Playit Tunnel
+      env:
+        PLAYIT_AUTH_KEY: ${{ secrets.PL }}
+      run: |
+        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret $env:PLAYIT_AUTH_KEY" -NoNewWindow -Wait
+        Start-Process -FilePath "$env:USERPROFILE\playit.exe" -NoNewWindow
+
+    # STEP 1: Install Avica and capture screenshot
+    - name: Install Avica
+      run: |
+        Invoke-WebRequest -Uri "https://www.avica.com/download/Avica_Setup.exe" -OutFile "$env:RUNNER_TEMP\Avica.exe"
+        Start-Process "$env:RUNNER_TEMP\Avica.exe" /S -Wait
+        Start-Process "C:\Program Files\Avica\Avica.exe"
+        Start-Sleep -Seconds 15
+
+        Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+        $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+        $bitmap = New-Object System.Drawing.Bitmap($screen.Width, $screen.Height)
+        $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+        $graphics.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
+        $bitmap.Save("$env:RUNNER_TEMP\avica_screenshot.png")
+
+    # STEP 2: OCR Extraction (Tesseract)
+    - name: Extract Avica Code with OCR
+      run: |
+        choco install tesseract -y --no-progress
+        tesseract "$env:RUNNER_TEMP\avica_screenshot.png" "$env:RUNNER_TEMP\avica_code" -l eng
+        $avicaCode = Get-Content "$env:RUNNER_TEMP\avica_code.txt" -Raw
+        echo "::add-mask::$avicaCode"  # Masks the code in logs
+        echo "AVICA_CODE=$avicaCode" >> $env:GITHUB_ENV
+
+    # Secure Output Options (Choose ONE):
+    # OPTION A: Upload to Secure Artifact (Least Secure)
+    - name: Upload Results
+      uses: actions/upload-artifact@v3
+      with:
+        name: avica-data
+        path: |
+          ${{ runner.temp }}/avica_screenshot.png
+          ${{ runner.temp }}/avica_code.txt
+
+    # OPTION B: Discord Webhook (More Secure)
+    - name: Send to Discord
+      if: false  # Change to 'true' to enable
+      run: |
+        $discordMsg = @{
+          content = "Avica Connection Code: `n$env:AVICA_CODE"
+        } | ConvertTo-Json
+        Invoke-RestMethod -Uri "${{ secrets.DISCORD_WEBHOOK }}" -Method Post -Body $discordMsg -ContentType "application/json"
+
+    - name: Keep Alive
+      run: Start-Sleep -Seconds 11800
