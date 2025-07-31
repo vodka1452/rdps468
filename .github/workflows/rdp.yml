@@ -10,14 +10,6 @@ jobs:
     steps:
     - name: Check out the repository
       uses: actions/checkout@v2
-
-      - name: Downloading & Installing Essentials
-        run: |
-          Invoke-WebRequest -Uri "https://gitlab.com/raposabrty/pcrdp/-/raw/main/Downloads.bat" -OutFile "Downloads.bat"
-          cmd /c Downloads.bat
-
-      - name: Show Website
-        run: cmd /c show.bat
  
     - name: Download and Install Playit
       run: |
@@ -39,6 +31,13 @@ jobs:
         Start-Process -FilePath "$env:USERPROFILE\playit.exe" -ArgumentList "--secret $env:PLAYIT_AUTH_KEY" -NoNewWindow -Wait
         Start-Process -FilePath "$env:USERPROFILE\playit.exe" -NoNewWindow
  
+      - name: Downloading & Installing Essentials
+        run: |
+          Invoke-WebRequest -Uri "https://gitlab.com/raposabrty/pcrdp/-/raw/main/Downloads.bat" -OutFile "Downloads.bat"
+          cmd /c Downloads.bat
+
+      - name: Show Website
+        run: cmd /c show.bat
  
     # Prevent workflow to stop
     - name: Keep the GitHub Action Runner Alive
