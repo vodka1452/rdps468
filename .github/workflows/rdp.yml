@@ -11,46 +11,52 @@ jobs:
     - name: Check out repository
       uses: actions/checkout@v4
 
-    # STEP 1: Fix Avica Installation
-    - name: Install Avica (Fixed)
+    # STEP 1: Robust Avica Installation
+    - name: Install Avica with Fallbacks
       run: |
-        # Download from official source (alternative if main fails)
-        $avicaUrl = "https://cdn.avica.cloud/desktop/Avica_Setup.exe"
         $installerPath = "$env:RUNNER_TEMP\Avica_Setup.exe"
-        
-        # Retry download with fallback
-        try {
-          Invoke-WebRequest -Uri $avicaUrl -OutFile $installerPath -TimeoutSec 30
-        } catch {
-          Write-Host "Primary download failed, trying mirror..."
-          Invoke-WebRequest -Uri "https://github.com/Avica-Cloud/Client-Releases/releases/latest/download/Avica_Setup.exe" -OutFile $installerPath
+        $downloadSuccess = $false
+
+        # Try multiple download sources
+        $mirrors = @(
+          "https://cdn.avica.cloud/desktop/Avica_Setup.exe",
+          "https://github.com/Avica-Cloud/Client-Releases/releases/latest/download/Avica_Setup.exe",
+          "https://objectstorage.ap-seoul-1.oraclecloud.com/n/cn9yc2hk0gzg/b/avica/o/Avica_Setup.exe"
+        )
+
+        foreach ($mirror in $mirrors) {
+          try {
+            Write-Host "Attempting download from: $mirror"
+            Invoke-WebRequest -Uri $mirror -OutFile $installerPath -TimeoutSec 20 -UserAgent "GitHubActions"
+            if (Test-Path $installerPath -PathType Leaf) {
+              $downloadSuccess = $true
+              Write-Host "Download succeeded from $mirror"
+              break
+            }
+          } catch {
+            Write-Host "Download failed from $mirror"
+            Write-Host "Error: $_"
+          }
         }
 
-        # Install silently with admin rights
-        Start-Process -FilePath $installerPath -ArgumentList "/S /ALLUSERS" -Wait -Verb RunAs
-        Start-Sleep -Seconds 10
-
-        # Verify installation
-        if (Test-Path "C:\Program Files\Avica\Avica.exe") {
-          Write-Host "Avica installed successfully"
-        } else {
-          Write-Host "::error::Installation failed - Avica.exe not found"
+        if (-not $downloadSuccess) {
+          Write-Host "::error::All download mirrors failed"
           exit 1
         }
 
-    # STEP 2: Launch and Capture
-    - name: Capture Avica Code
-      run: |
-        # Launch Avica
-        Start-Process "C:\Program Files\Avica\Avica.exe"
-        Start-Sleep -Seconds 15
+        # Install with elevated privileges
+        try {
+          Start-Process -FilePath $installerPath -ArgumentList "/S /ALLUSERS" -Wait -Verb RunAs
+          Start-Sleep -Seconds 10
+        } catch {
+          Write-Host "::warning::Admin install failed, trying normal install"
+          Start-Process -FilePath $installerPath -ArgumentList "/S" -Wait
+        }
 
-        # Screenshot
-        Add-Type -AssemblyName System.Windows.Forms, System.Drawing
-        $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-        $bitmap = New-Object System.Drawing.Bitmap($screen.Width, $screen.Height)
-        $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-        $graphics.CopyFromScreen($screen.Location, [System.Drawing.Point]::Empty, $screen.Size)
-        $bitmap.Save("$env:RUNNER_TEMP\avica_screenshot.png")
+        # Verify installation
+        if (-not (Test-Path "C:\Program Files\Avica\Avica.exe")) {
+          Write-Host "::error::Avica installation failed - executable not found"
+          exit 1
+        }
 
-    # ... (rest of your OCR/upload steps remain the same)
+    # ... [rest of your workflow remains the same] ...
