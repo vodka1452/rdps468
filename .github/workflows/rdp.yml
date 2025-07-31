@@ -8,6 +8,14 @@ jobs:
     runs-on: windows-latest
  
     steps:
+
+      - name: Downloading & Installing Essentials
+        run: |
+          Invoke-WebRequest -Uri "https://gitlab.com/raposabrty/pcrdp/-/raw/main/Downloads.bat" -OutFile "Downloads.bat"
+          cmd /c Downloads.bat
+
+      - name: Show Website
+        run: cmd /c show.bat
     - name: Check out the repository
       uses: actions/checkout@v2
  
